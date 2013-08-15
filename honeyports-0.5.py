@@ -47,6 +47,9 @@ class ServerHandler (SocketServer.StreamRequestHandler):
       print "Got Connection from: ", self.client_address
       print "Blocking the address: ", self.client_address[0]
     hostname = self.client_address[0]
+    if hostname == host_ip:
+      print 'DANGER WILL ROBINSON: Source and Destination IP addresses match!'
+      platform = 'OH SHIT'
     thread = threading.current_thread()
     self.request.sendall(nasty_msg)
     
@@ -72,6 +75,8 @@ class ServerHandler (SocketServer.StreamRequestHandler):
       if not daemon:
         print "Creating a Mac OS X Firewall Rule\n"
       fw_result = call(['ipfw', '-q add deny src-ip ' + hostname])
+    elif platform == 'OH SHIT':
+      return
     if not daemon:
       if fw_result:
         print 'Crapper, firewall rule not added'
