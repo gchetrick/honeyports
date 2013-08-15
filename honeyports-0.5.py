@@ -12,8 +12,6 @@
 
 # TODO:
 # Create own chain for easy management in linux
-# Fix menuing system
-# Add Daemon option
 # List all interfaces and define the interface to listen on
 # Listen on multiple ports
 # Add ability for a whilelist - Listening port and localhost or file input
@@ -24,6 +22,8 @@
 # Change Log v0.5
 # Added support for multi-threading
 # fix options section to actually catch a miss and improper port
+# Fix menuing system
+# Added Daemon option
 
 
 # Import the stuff we need
@@ -43,8 +43,9 @@ class ThreadingTCPServer (SocketServer.ThreadingMixIn, SocketServer.TCPServer):
 class ServerHandler (SocketServer.StreamRequestHandler):
 
   def handle(self):
-    print "Got Connection from: ", self.client_address
-    print "Blocking the address: ", self.client_address[0]
+    if not daemon:
+      print "Got Connection from: ", self.client_address
+      print "Blocking the address: ", self.client_address[0]
     hostname = self.client_address[0]
     thread = threading.current_thread()
     self.request.sendall(nasty_msg)
@@ -52,24 +53,31 @@ class ServerHandler (SocketServer.StreamRequestHandler):
     # If there is a full connection, create a firewall rule
     # Run the command associated with the platform being run:
     if platform == "Windows":
-      print "Creating a Windows Firewall Rule\n"
+      if not daemon:
+        print "Creating a Windows Firewall Rule\n"
       fw_result = call('netsh advfirewall firewall add rule name="honeyports" dir=in remoteip= ' + hostname + ' localport=any protocol=TCP action=block > NUL', shell=True)   
     elif platform == "Linux":
-      print "Creating a Linux Firewall Rule\n"
-      command = '/sbin/iptables -A INPUT -s ' + hostname + ' -j ACCEPT'
+      if not daemon:
+        print "Creating a Linux Firewall Rule\n"
+      else:
+        log='logger -t honeyports "blocked %s -- stupid bastard"' % hostname
+        os.popen(log)
+      command = '/sbin/iptables -A INPUT -s ' + hostname + ' -j REJECT'
       fw_result = os.popen(command)
       if fw_result:
         fw_result=0
       else:
         fw_result=1
     elif platform == "Darwin":
-      print "Creating a Mac OS X Firewall Rule\n"
+      if not daemon:
+        print "Creating a Mac OS X Firewall Rule\n"
       fw_result = call(['ipfw', '-q add deny src-ip ' + hostname])
-    if fw_result:
-      print 'Crapper, firewall rule not added'
-    else:
-      print 'I just blocked: ', hostname
-    return
+    if not daemon:
+      if fw_result:
+        print 'Crapper, firewall rule not added'
+      else:
+        print 'I just blocked: ', hostname
+      return
 
   def finish(self):
     print self.client_address, 'disconnected!'
@@ -88,18 +96,18 @@ def MenuInteraction (threadName):
   # Listen for user to type something then give options to
   # Flush all firewall rules, quit or print the rules
   while True:
-    mydata = raw_input('Enter Commands (q=quit f=flush rules p=print rules): ')
+    mydata = raw_input('Enter Commands (q=quit f=flush rules l=list rules): ')
 
     if mydata == "f":
       print "Flushing firewall rules..."
       print 'Flush command is: ', str(flush)
       call(flush[0] + ' ' + flush[1], shell=True)
-    elif mydata == "p":
+    elif mydata == "l":
       print 'Here is what your rules look like:'
       call(fwlist[0] + ' ' +  fwlist[1], shell=True)
     elif mydata == "q":
-      print "Goodbye."
-      sys.exit()
+      print "Goodbye and thanks for playing..."
+      os._exit(1)
     else:
       print "What?"
 
@@ -121,7 +129,7 @@ USAGE %s -p <port>
 nasty_msg = "\n***** This Fuck you provided by the fine folks at PaulDotCom, Hack Naked!*****\n" 
 
 try:
-        myopts, args = getopt.gnu_getopt(sys.argv[1:], "h:p:D", ["host", "port", "daemon"])
+        myopts, args = getopt.gnu_getopt(sys.argv[1:], "h: p: D", ["host", "port", "daemon"])
 except getopt.GetoptError as error:
         print (str(error))
         print USAGE
@@ -132,42 +140,54 @@ if not myopts:
       sys.exit(2)
 
 for o, a in myopts:
-   if o == '-p' and int(a) < 65536:
-      port=int(a)
-   else:
-      print("Not a valid port number")
+  if (o == '-p' or o == '-port') and int(a) < 65536:
+    port=int(a)
+  elif (o == '-p' or o == '-port' ) and int(a) > 65535:
+    print("Not a valid port number")
+    print USAGE
+    sys.exit(2)
+  if o == '-D' or o == '-daemon':
+    daemon = 1
+  else: 
+    daemon = 0
+  if (o == '-h' or o == '-host'):
+    if not a:
+      print "Forgot to provide an IP"
       print USAGE
-      sys.exit(2)
-		
-print name, 'Version:', version
-print 'I will listen on TCP port number: ', port 
+    else:
+      host = a
+if not daemon:	
+  print name, 'Version:', version
+  print 'I will listen on TCP port number: ', port 
 
 # Determine which platform we are running on
-
 platform = platform.system()
-print 'Honeyports detected you are running on: ', platform
+if not daemon:
+  print 'Honeyports detected you are running on: ', platform
 
 if platform == "Darwin":
 	#host = socket.gethostname() # Get local IP on OS X
   flush = 'ipfw', '-q flush'
   fwlist = 'ipfw', 'list'
-  print "Setting sockets up for OS X"
+  #print "Setting sockets up for OS X"
 elif platform == "Linux":
 	#host = s.getsockname()[0] # Get local IP on Linux
   flush = 'iptables', '-F'
   fwlist = 'iptables', '-nL'
-  print "Setting sockets up for Linux"
+  #print "Setting sockets up for Linux"
 else:
   flush = 'netsh', 'advfirewall reset'
   fwlist = "netsh", """ advfirewall firewall show rule name=honeyports | find "RemoteIP" """
   host = ''
-host = '172.16.67.228'
+#host = '172.16.67.230'
 
 #try:
 thread.start_new_thread( StartServer, ("Thread1", host, port))
-thread.start_new_thread( MenuInteraction, ("Thread2",))
+if not daemon: 
+  thread.start_new_thread( MenuInteraction, ("Thread2",))
 #StartServer("Thread1",host, port)
 #except:
  #  print "Error: unable to start thread"
 while 1: 
   pass
+
