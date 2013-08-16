@@ -18,6 +18,7 @@
 # Syslog blocks in daemon mode
 # Set/config a lifetime for the FW rule that is created
 # Add options for protocol specific banners or taunting messages.
+# Verification it is running as root/administrator
 
 # Change Log v0.5
 # Added support for multi-threading
@@ -47,9 +48,9 @@ class ServerHandler (SocketServer.StreamRequestHandler):
       print "Got Connection from: ", self.client_address
       print "Blocking the address: ", self.client_address[0]
     hostname = self.client_address[0]
-    if hostname == host_ip:
+    if hostname == host:
       print 'DANGER WILL ROBINSON: Source and Destination IP addresses match!'
-      platform = 'OH SHIT'
+      return
     thread = threading.current_thread()
     self.request.sendall(nasty_msg)
     
@@ -75,8 +76,6 @@ class ServerHandler (SocketServer.StreamRequestHandler):
       if not daemon:
         print "Creating a Mac OS X Firewall Rule\n"
       fw_result = call(['ipfw', '-q add deny src-ip ' + hostname])
-    elif platform == 'OH SHIT':
-      return
     if not daemon:
       if fw_result:
         print 'Crapper, firewall rule not added'
@@ -171,28 +170,20 @@ if not daemon:
   print 'Honeyports detected you are running on: ', platform
 
 if platform == "Darwin":
-	#host = socket.gethostname() # Get local IP on OS X
   flush = 'ipfw', '-q flush'
   fwlist = 'ipfw', 'list'
-  #print "Setting sockets up for OS X"
 elif platform == "Linux":
-	#host = s.getsockname()[0] # Get local IP on Linux
   flush = 'iptables', '-F'
   fwlist = 'iptables', '-nL'
-  #print "Setting sockets up for Linux"
 else:
   flush = 'netsh', 'advfirewall reset'
   fwlist = "netsh", """ advfirewall firewall show rule name=honeyports | find "RemoteIP" """
   host = ''
-#host = '172.16.67.230'
 
-#try:
 thread.start_new_thread( StartServer, ("Thread1", host, port))
 if not daemon: 
   thread.start_new_thread( MenuInteraction, ("Thread2",))
-#StartServer("Thread1",host, port)
-#except:
- #  print "Error: unable to start thread"
+
 while 1: 
   pass
 
